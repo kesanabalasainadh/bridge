@@ -1,0 +1,165 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>NYC Bridge Atlas - 3D Interactive Infrastructure Analytics</title>
+    <link href="https://api.mapbox.com/mapbox-gl-js/v3.3.0/mapbox-gl.css" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <!-- Loading Screen -->
+    <div class="loading-overlay" id="loading">
+        <div class="loading-content">
+            <div class="loading-bridge">
+                <div class="bridge-cable left"></div>
+                <div class="bridge-tower left"></div>
+                <div class="bridge-deck"></div>
+                <div class="bridge-tower right"></div>
+                <div class="bridge-cable right"></div>
+            </div>
+            <div class="loading-bar"><div class="loading-fill" id="load-fill"></div></div>
+            <div class="loading-text">Constructing 3D Bridge Map...</div>
+        </div>
+    </div>
+
+    <!-- Map Container -->
+    <div id="map"></div>
+
+    <!-- Top Bar -->
+    <div class="top-bar">
+        <div class="top-left">
+            <div class="logo">
+                <svg width="28" height="28" viewBox="0 0 28 28" fill="none">
+                    <path d="M2 20L6 8L14 12L22 8L26 20" stroke="url(#g1)" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
+                    <path d="M6 8V20" stroke="url(#g1)" stroke-width="2" stroke-linecap="round"/>
+                    <path d="M22 8V20" stroke="url(#g1)" stroke-width="2" stroke-linecap="round"/>
+                    <path d="M2 20H26" stroke="url(#g1)" stroke-width="2.5" stroke-linecap="round"/>
+                    <path d="M6 8C8 10 12 12 14 12C16 12 20 10 22 8" stroke="url(#g1)" stroke-width="1.5" stroke-linecap="round" opacity="0.5"/>
+                    <defs><linearGradient id="g1" x1="2" y1="8" x2="26" y2="20"><stop stop-color="#60a5fa"/><stop offset="1" stop-color="#3b82f6"/></linearGradient></defs>
+                </svg>
+            </div>
+            <div>
+                <h1 class="app-title">NYC BRIDGE ATLAS</h1>
+                <p class="app-subtitle">3D Infrastructure Intelligence</p>
+            </div>
+        </div>
+        <div class="top-stats" id="top-stats">
+            <div class="top-stat">
+                <span class="ts-value" id="ts-bridges">14</span>
+                <span class="ts-label">Bridges</span>
+            </div>
+            <div class="top-stat-divider"></div>
+            <div class="top-stat">
+                <span class="ts-value" id="ts-daily">--</span>
+                <span class="ts-label">Daily Vehicles</span>
+            </div>
+            <div class="top-stat-divider"></div>
+            <div class="top-stat">
+                <span class="ts-value green" id="ts-miles-saved">--</span>
+                <span class="ts-label">Miles Saved / Day</span>
+            </div>
+            <div class="top-stat-divider"></div>
+            <div class="top-stat">
+                <span class="ts-value orange" id="ts-hours-saved">--</span>
+                <span class="ts-label">Human-Hours Saved / Day</span>
+            </div>
+        </div>
+        <div class="top-right">
+            <button class="view-btn" id="btn-view-traffic" title="Color by traffic volume">
+                <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor"><path d="M8 1a3 3 0 00-3 3v4a3 3 0 106 0V4a3 3 0 00-3-3zm5 7a5 5 0 01-10 0H1a7 7 0 0014 0h-2z"/></svg>
+                Traffic
+            </button>
+            <button class="view-btn active" id="btn-view-health" title="Color by health rating">
+                <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor"><path d="M8 1.314C12.438-3.248 23.534 4.735 8 15-7.534 4.736 3.562-3.248 8 1.314z"/></svg>
+                Health
+            </button>
+            <button class="view-btn" id="btn-view-age" title="Color by bridge age">
+                <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor"><path d="M8 3.5a.5.5 0 00-1 0V9a.5.5 0 00.252.434l3.5 2a.5.5 0 00.496-.868L8 8.71V3.5z"/><path d="M8 16A8 8 0 108 0a8 8 0 000 16zm7-8A7 7 0 111 8a7 7 0 0114 0z"/></svg>
+                Age
+            </button>
+        </div>
+    </div>
+
+    <!-- Sidebar -->
+    <div class="sidebar" id="sidebar">
+        <div class="sidebar-header">
+            <div class="filter-chips" id="filter-chips">
+                <button class="chip active" data-filter="all">All</button>
+                <button class="chip" data-filter="suspension">Suspension</button>
+                <button class="chip" data-filter="cable-stayed">Cable-Stayed</button>
+                <button class="chip" data-filter="arch">Arch</button>
+                <button class="chip" data-filter="cantilever">Cantilever</button>
+                <button class="chip" data-filter="truss">Truss</button>
+            </div>
+            <div class="search-box">
+                <svg width="14" height="14" viewBox="0 0 14 14" fill="#4a5a6e"><circle cx="5.5" cy="5.5" r="4.5" stroke="#4a5a6e" stroke-width="1.5" fill="none"/><path d="M9 9L13 13" stroke="#4a5a6e" stroke-width="1.5" stroke-linecap="round"/></svg>
+                <input type="text" id="search-input" placeholder="Search bridges...">
+            </div>
+        </div>
+        <div class="bridge-list" id="bridge-list"></div>
+    </div>
+
+    <!-- Detail Panel (Deep Dive) -->
+    <div class="detail-panel" id="detail-panel">
+        <button class="detail-close" id="detail-close">
+            <svg width="18" height="18" viewBox="0 0 18 18" fill="currentColor"><path d="M4.5 4.5L13.5 13.5M13.5 4.5L4.5 13.5" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+        </button>
+        <div id="detail-content"></div>
+    </div>
+
+    <!-- Bottom Analytics Bar -->
+    <div class="bottom-bar" id="bottom-bar">
+        <div class="bottom-stat">
+            <div class="bs-icon">
+                <svg width="20" height="20" viewBox="0 0 20 20" fill="#64b5f6"><path d="M10 2a8 8 0 100 16 8 8 0 000-16zm0 14.5a6.5 6.5 0 110-13 6.5 6.5 0 010 13zM10 5v5l3.5 2" stroke="#64b5f6" stroke-width="1.5" fill="none" stroke-linecap="round"/></svg>
+            </div>
+            <div>
+                <div class="bs-value" id="bs-crossings">--</div>
+                <div class="bs-label">Daily Person-Trips</div>
+            </div>
+        </div>
+        <div class="bottom-stat">
+            <div class="bs-icon">
+                <svg width="20" height="20" viewBox="0 0 20 20" fill="none"><path d="M3 17L10 3L17 17H3Z" stroke="#66bb6a" stroke-width="1.5" fill="none"/><path d="M10 7V12M10 14V15" stroke="#66bb6a" stroke-width="1.5" stroke-linecap="round"/></svg>
+            </div>
+            <div>
+                <div class="bs-value green" id="bs-monthly-miles">--</div>
+                <div class="bs-label">Miles Saved / Month</div>
+            </div>
+        </div>
+        <div class="bottom-stat">
+            <div class="bs-icon">
+                <svg width="20" height="20" viewBox="0 0 20 20" fill="none"><path d="M10 2C5.58 2 2 5.58 2 10s3.58 8 8 8 8-3.58 8-8-3.58-8-8-8zm0 14.5c-3.58 0-6.5-2.92-6.5-6.5S6.42 3.5 10 3.5s6.5 2.92 6.5 6.5-2.92 6.5-6.5 6.5z" fill="#ffa726"/><path d="M10.5 6H9v5l4 2.4.75-1.23-3.25-1.93V6z" fill="#ffa726"/></svg>
+            </div>
+            <div>
+                <div class="bs-value orange" id="bs-time-per-person">--</div>
+                <div class="bs-label">Avg Min Saved / Person (@50mph)</div>
+            </div>
+        </div>
+        <div class="bottom-stat">
+            <div class="bs-icon">
+                <svg width="20" height="20" viewBox="0 0 20 20" fill="none"><path d="M7 10C7 8.34 8.34 7 10 7M13 10C13 11.66 11.66 13 10 13" stroke="#ef5350" stroke-width="1.5" stroke-linecap="round"/><circle cx="10" cy="10" r="7" stroke="#ef5350" stroke-width="1.5" fill="none"/><circle cx="10" cy="10" r="2" fill="#ef5350"/></svg>
+            </div>
+            <div>
+                <div class="bs-value red" id="bs-humanity">--</div>
+                <div class="bs-label">Human-Hours Saved / Day</div>
+            </div>
+        </div>
+        <div class="bottom-stat">
+            <div class="bs-icon">
+                <svg width="20" height="20" viewBox="0 0 20 20" fill="none"><rect x="3" y="3" width="14" height="14" rx="2" stroke="#90caf9" stroke-width="1.5" fill="none"/><path d="M3 7H17M7 3V17" stroke="#90caf9" stroke-width="1.5"/></svg>
+            </div>
+            <div>
+                <div class="bs-value" id="bs-avg-age">--</div>
+                <div class="bs-label">Average Bridge Age (yrs)</div>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://api.mapbox.com/mapbox-gl-js/v3.3.0/mapbox-gl.js"></script>
+    <script src="bridges-data.js"></script>
+    <script src="app.js"></script>
+</body>
+</html>
