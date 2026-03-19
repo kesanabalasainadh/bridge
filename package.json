@@ -1,0 +1,19 @@
+{
+  "name": "bridge-atlas",
+  "version": "2.0.0",
+  "description": "NYC Bridge Atlas - 3D Interactive Infrastructure Analytics",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node server.js",
+    "download-nbi": "node scripts/download-nbi.js",
+    "process-nbi": "node scripts/process-nbi.js",
+    "setup-data": "node scripts/download-nbi.js && node scripts/process-nbi.js"
+  },
+  "dependencies": {
+    "express": "^4.21.0",
+    "cors": "^2.8.5",
+    "supercluster": "^8.0.1",
+    "compression": "^1.7.4"
+  }
+}
