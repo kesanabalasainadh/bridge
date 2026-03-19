@@ -3,10 +3,11 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>NYC Bridge Atlas - 3D Interactive Infrastructure Analytics</title>
+    <link rel="icon" type="image/svg+xml" href="favicon.svg?v=6">
+    <title>Bridge Atlas - 3D Interactive Infrastructure Analytics</title>
     <link href="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.css" rel="stylesheet">
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="styles.css">
+    <link rel="stylesheet" href="styles.css?v=6">
 </head>
 <body>
     <!-- Loading Screen -->
@@ -31,17 +32,34 @@
     <div class="top-bar">
         <div class="top-left">
             <div class="logo">
-                <svg width="28" height="28" viewBox="0 0 28 28" fill="none">
-                    <path d="M2 20L6 8L14 12L22 8L26 20" stroke="url(#g1)" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
-                    <path d="M6 8V20" stroke="url(#g1)" stroke-width="2" stroke-linecap="round"/>
-                    <path d="M22 8V20" stroke="url(#g1)" stroke-width="2" stroke-linecap="round"/>
-                    <path d="M2 20H26" stroke="url(#g1)" stroke-width="2.5" stroke-linecap="round"/>
-                    <path d="M6 8C8 10 12 12 14 12C16 12 20 10 22 8" stroke="url(#g1)" stroke-width="1.5" stroke-linecap="round" opacity="0.5"/>
-                    <defs><linearGradient id="g1" x1="2" y1="8" x2="26" y2="20"><stop stop-color="#60a5fa"/><stop offset="1" stop-color="#3b82f6"/></linearGradient></defs>
+                <svg width="32" height="32" viewBox="0 0 32 32" fill="none">
+                    <!-- Towers -->
+                    <rect x="8" y="8" width="2.5" height="16" rx="1" fill="url(#g1)"/>
+                    <rect x="21.5" y="8" width="2.5" height="16" rx="1" fill="url(#g1)"/>
+                    <!-- Main cables (catenary curves) -->
+                    <path d="M2 10C2 10 5.5 6 9.25 5C13 4 16 5 16 5C16 5 19 4 22.75 5C26.5 6 30 10 30 10" stroke="url(#g1)" stroke-width="1.8" stroke-linecap="round" fill="none"/>
+                    <!-- Deck -->
+                    <path d="M1 22H31" stroke="url(#g1)" stroke-width="2.5" stroke-linecap="round"/>
+                    <!-- Suspender cables -->
+                    <path d="M5 11.5V22" stroke="#60a5fa" stroke-width="0.8" opacity="0.4"/>
+                    <path d="M9.25 7V22" stroke="#60a5fa" stroke-width="0.8" opacity="0.4"/>
+                    <path d="M12.5 6.5V22" stroke="#60a5fa" stroke-width="0.8" opacity="0.4"/>
+                    <path d="M16 6V22" stroke="#60a5fa" stroke-width="0.8" opacity="0.5"/>
+                    <path d="M19.5 6.5V22" stroke="#60a5fa" stroke-width="0.8" opacity="0.4"/>
+                    <path d="M22.75 7V22" stroke="#60a5fa" stroke-width="0.8" opacity="0.4"/>
+                    <path d="M27 11.5V22" stroke="#60a5fa" stroke-width="0.8" opacity="0.4"/>
+                    <!-- Tower caps -->
+                    <rect x="7" y="7" width="4.5" height="2" rx="0.8" fill="#3b82f6"/>
+                    <rect x="20.5" y="7" width="4.5" height="2" rx="0.8" fill="#3b82f6"/>
+                    <!-- Road markings -->
+                    <path d="M4 22.8H28" stroke="#1e3a5f" stroke-width="0.6" stroke-dasharray="2 2"/>
+                    <!-- Water hint -->
+                    <path d="M3 26C6 25 10 27 16 25C22 27 26 25 29 26" stroke="#1a3a5a" stroke-width="1" stroke-linecap="round" opacity="0.3"/>
+                    <defs><linearGradient id="g1" x1="2" y1="5" x2="30" y2="24"><stop stop-color="#60a5fa"/><stop offset="1" stop-color="#3b82f6"/></linearGradient></defs>
                 </svg>
             </div>
             <div>
-                <h1 class="app-title">NYC BRIDGE ATLAS</h1>
+                <h1 class="app-title">BRIDGE ATLAS</h1>
                 <p class="app-subtitle">3D Infrastructure Intelligence</p>
             </div>
         </div>
@@ -87,6 +105,10 @@
                 <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor"><path d="M8 3.5a.5.5 0 00-1 0V9a.5.5 0 00.252.434l3.5 2a.5.5 0 00.496-.868L8 8.71V3.5z"/><path d="M8 16A8 8 0 108 0a8 8 0 000 16zm7-8A7 7 0 111 8a7 7 0 0114 0z"/></svg>
                 Age
             </button>
+            <button class="view-btn explore-us-btn" id="btn-explore-us" title="Load 7,500+ bridges across all US states">
+                <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor"><path d="M8 0a8 8 0 100 16A8 8 0 008 0zm0 14.5a6.5 6.5 0 110-13 6.5 6.5 0 010 13zM6.5 4L12 8l-5.5 4V4z"/></svg>
+                Explore US
+            </button>
         </div>
     </div>
 
@@ -117,6 +139,14 @@
                 <button class="chip" data-condition="Good">Good</button>
                 <button class="chip" data-condition="Fair">Fair</button>
                 <button class="chip" data-condition="Poor">Poor</button>
+            </div>
+            <div class="filter-chips" id="length-chips">
+                <button class="chip active" data-length="all">All Lengths</button>
+                <button class="chip" data-length="0-500">&lt;500ft</button>
+                <button class="chip" data-length="500-1000">500-1K</button>
+                <button class="chip" data-length="1000-2500">1K-2.5K</button>
+                <button class="chip" data-length="2500-5000">2.5K-5K</button>
+                <button class="chip" data-length="5000+">5K+</button>
             </div>
             <div class="search-box">
                 <svg width="14" height="14" viewBox="0 0 14 14" fill="#4a5a6e"><circle cx="5.5" cy="5.5" r="4.5" stroke="#4a5a6e" stroke-width="1.5" fill="none"/><path d="M9 9L13 13" stroke="#4a5a6e" stroke-width="1.5" stroke-linecap="round"/></svg>
@@ -199,8 +229,8 @@
     </div>
 
     <script src="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js"></script>
-    <script src="bridges-data.js"></script>
-    <script src="data-service.js"></script>
-    <script src="app.js"></script>
+    <script src="bridges-data.js?v=6"></script>
+    <script src="data-service.js?v=6"></script>
+    <script src="app.js?v=6"></script>
 </body>
 </html>

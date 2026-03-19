@@ -11,6 +11,7 @@ const API_BASE = 'http://localhost:4000';
 // USA center coordinates (fallback to NYC if backend not available)
 const USA_CENTER = [-98.5, 39.8];
 const NYC_CENTER = [-73.95, 40.73];
+const INITIAL_CENTER = NYC_CENTER;
 const INITIAL_ZOOM = 10.3;
 const INITIAL_PITCH = 55;
 const INITIAL_BEARING = -15;
@@ -212,7 +213,7 @@ function initMap() {
     map = new maplibregl.Map({
         container: 'map',
         style: satelliteStyle,
-        center: NYC_CENTER,
+        center: INITIAL_CENTER,
         zoom: INITIAL_ZOOM,
         pitch: INITIAL_PITCH,
         bearing: INITIAL_BEARING,
@@ -231,6 +232,8 @@ function initMap() {
             updateMapFromBackend(); // initial load
         }
 
+        // NBI data loaded on demand via "Explore US" button
+
         // Hide loading
         setTimeout(() => {
             document.getElementById('loading').classList.add('hidden');
@@ -241,6 +244,154 @@ function initMap() {
 // ============================================
 // Bridge Layers
 // ============================================
+// ============================================
+// NBI Static Data Layer
+// ============================================
+let nbiLoaded = false;
+
+async function loadNbiBridges() {
+    if (nbiLoaded) {
+        // Toggle off — remove layers and reset
+        if (map.getLayer('nbi-bridges-dots')) map.removeLayer('nbi-bridges-dots');
+        if (map.getLayer('nbi-bridges-labels')) map.removeLayer('nbi-bridges-labels');
+        if (map.getSource('nbi-bridges')) map.removeSource('nbi-bridges');
+        window.NBI_BRIDGES = [];
+        nbiLoaded = false;
+        document.getElementById('btn-explore-us').classList.remove('active');
+        document.getElementById('btn-explore-us').innerHTML = '<svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor"><path d="M8 0a8 8 0 100 16A8 8 0 008 0zm0 14.5a6.5 6.5 0 110-13 6.5 6.5 0 010 13zM6.5 4L12 8l-5.5 4V4z"/></svg> Explore US';
+        document.getElementById('ts-bridges').textContent = NYC_BRIDGES.length;
+        renderSidebar(currentFilter, document.getElementById('search-input')?.value || '');
+        map.flyTo({ center: INITIAL_CENTER, zoom: INITIAL_ZOOM, pitch: INITIAL_PITCH, bearing: INITIAL_BEARING, duration: 1500 });
+        return;
+    }
+
+    const btn = document.getElementById('btn-explore-us');
+    btn.innerHTML = '<svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor"><path d="M8 0a8 8 0 100 16A8 8 0 008 0zm0 14.5a6.5 6.5 0 110-13 6.5 6.5 0 010 13zM6.5 4L12 8l-5.5 4V4z"/></svg> Loading...';
+
+    try {
+        const res = await fetch('us-bridges.json');
+        if (!res.ok) return;
+        const nbiBridges = await res.json();
+        console.log(`Loaded ${nbiBridges.length} NBI bridges`);
+
+        // Convert to GeoJSON
+        const nbiGeojson = {
+            type: 'FeatureCollection',
+            features: nbiBridges.map(b => ({
+                type: 'Feature',
+                properties: {
+                    id: b.id,
+                    name: b.name,
+                    condition: b.condition,
+                    adt: b.adt || 0,
+                    yearBuilt: b.yearBuilt,
+                    length: b.length,
+                    type: b.type,
+                    owner: b.owner,
+                    deckCond: b.conditionRatings?.deck,
+                    superCond: b.conditionRatings?.superstructure,
+                    subCond: b.conditionRatings?.substructure,
+                },
+                geometry: { type: 'Point', coordinates: [b.lng, b.lat] },
+            })),
+        };
+
+        // Store NBI bridges globally for sidebar
+        window.NBI_BRIDGES = nbiBridges;
+
+        map.addSource('nbi-bridges', { type: 'geojson', data: nbiGeojson });
+
+        // Re-render sidebar to include NBI bridges
+        renderSidebar(currentFilter, document.getElementById('search-input')?.value || '');
+
+        // NBI bridge dots — visible from zoom 8
+        map.addLayer({
+            id: 'nbi-bridges-dots',
+            type: 'circle',
+            source: 'nbi-bridges',
+            minzoom: 8,
+            paint: {
+                'circle-radius': [
+                    'interpolate', ['linear'], ['zoom'],
+                    11, 2,
+                    14, 5,
+                    17, 8,
+                ],
+                'circle-color': [
+                    'match', ['get', 'condition'],
+                    'Good', '#4caf50',
+                    'Fair', '#ff9800',
+                    'Poor', '#f44336',
+                    '#666666'
+                ],
+                'circle-opacity': 0.7,
+                'circle-stroke-width': 1,
+                'circle-stroke-color': 'rgba(255,255,255,0.3)',
+            },
+        });
+
+        // NBI bridge labels at high zoom
+        map.addLayer({
+            id: 'nbi-bridges-labels',
+            type: 'symbol',
+            source: 'nbi-bridges',
+            minzoom: 14,
+            layout: {
+                'text-field': ['get', 'name'],
+                'text-font': ['Open Sans Semibold'],
+                'text-size': 10,
+                'text-offset': [0, 1.2],
+                'text-anchor': 'top',
+                'text-allow-overlap': false,
+            },
+            paint: {
+                'text-color': '#cccccc',
+                'text-halo-color': 'rgba(0, 0, 0, 0.8)',
+                'text-halo-width': 1.5,
+            },
+        });
+
+        // Hover popup for NBI bridges
+        map.on('mouseenter', 'nbi-bridges-dots', (e) => {
+            map.getCanvas().style.cursor = 'pointer';
+            const p = e.features[0].properties;
+            if (activePopup) activePopup.remove();
+            const condColor = p.condition === 'Good' ? '#4caf50' : p.condition === 'Fair' ? '#ff9800' : p.condition === 'Poor' ? '#f44336' : '#666';
+            activePopup = new maplibregl.Popup({ closeButton: false, offset: 10 })
+                .setLngLat(e.features[0].geometry.coordinates)
+                .setHTML(`
+                    <div class="popup-title">${p.name}</div>
+                    <div class="popup-row"><span class="pr-label">Type</span><span class="pr-value">${p.type}</span></div>
+                    <div class="popup-row"><span class="pr-label">Built</span><span class="pr-value">${p.yearBuilt || 'N/A'}</span></div>
+                    <div class="popup-row"><span class="pr-label">Length</span><span class="pr-value">${p.length ? formatNum(p.length) + ' ft' : 'N/A'}</span></div>
+                    <div class="popup-row"><span class="pr-label">Daily Traffic</span><span class="pr-value">${p.adt ? formatNum(p.adt) : 'N/A'}</span></div>
+                    <div class="popup-row"><span class="pr-label">Condition</span><span class="pr-value" style="color:${condColor}">${p.condition}</span></div>
+                    <div class="popup-row"><span class="pr-label">Owner</span><span class="pr-value">${p.owner}</span></div>
+                    <div style="margin-top:6px;font-size:9px;color:#4a6080;text-align:center">Source: National Bridge Inventory (FHWA 2024)</div>
+                `)
+                .addTo(map);
+        });
+        map.on('mouseleave', 'nbi-bridges-dots', () => {
+            map.getCanvas().style.cursor = '';
+            if (activePopup) { activePopup.remove(); activePopup = null; }
+        });
+
+        // Update bridge count in top bar
+        const totalCount = NYC_BRIDGES.length + nbiBridges.length;
+        document.getElementById('ts-bridges').textContent = formatCompact(totalCount);
+
+        // Mark as loaded, update button, fly to US view
+        nbiLoaded = true;
+        btn.classList.add('active');
+        btn.innerHTML = '<svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor"><path d="M8 0a8 8 0 100 16A8 8 0 008 0zm0 14.5a6.5 6.5 0 110-13 6.5 6.5 0 010 13zM6.5 4L12 8l-5.5 4V4z"/></svg> NYC Only';
+        map.flyTo({ center: USA_CENTER, zoom: 4.2, pitch: 30, bearing: 0, duration: 2000 });
+
+    } catch (e) {
+        console.warn('NBI data not available:', e);
+        btn.innerHTML = '<svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor"><path d="M8 0a8 8 0 100 16A8 8 0 008 0zm0 14.5a6.5 6.5 0 110-13 6.5 6.5 0 010 13zM6.5 4L12 8l-5.5 4V4z"/></svg> Explore US';
+    }
+}
+
 function addBridgeLayers() {
     // GeoJSON source for bridge lines
     const bridgeLines = {
@@ -564,71 +715,209 @@ function populateFilters() {
     });
 }
 
+let currentSort = 'traffic-desc'; // default sort
+let currentLengthBucket = 'all'; // all | 0-500 | 500-1000 | 1000-2500 | 2500-5000 | 5000+
+
+function matchesLengthBucket(lengthFt) {
+    if (currentLengthBucket === 'all') return true;
+    if (!lengthFt) return false;
+    switch (currentLengthBucket) {
+        case '0-500': return lengthFt < 500;
+        case '500-1000': return lengthFt >= 500 && lengthFt < 1000;
+        case '1000-2500': return lengthFt >= 1000 && lengthFt < 2500;
+        case '2500-5000': return lengthFt >= 2500 && lengthFt < 5000;
+        case '5000+': return lengthFt >= 5000;
+        default: return true;
+    }
+}
+
 function renderSidebar(filter = 'all', search = '') {
     const list = document.getElementById('bridge-list');
-    const bridges = NYC_BRIDGES.filter(b => {
+
+    // --- Curated bridges ---
+    const curated = NYC_BRIDGES.filter(b => {
         if (filter !== 'all' && !b.type.includes(filter)) return false;
         if (search && !b.name.toLowerCase().includes(search.toLowerCase())) return false;
-        // State filter
         if (currentState !== 'all') {
             if (b.state && b.state !== currentState) return false;
         }
-        // City filter
         if (currentCity !== 'all') {
             if (b.connects && !b.connects.some(c => c.includes(currentCity))) return false;
         }
-        // Condition filter
         if (currentCondition !== 'all') {
             if (currentCondition === 'Good' && b.healthRating < 5.5) return false;
             if (currentCondition === 'Fair' && (b.healthRating < 4.5 || b.healthRating >= 5.5)) return false;
             if (currentCondition === 'Poor' && b.healthRating >= 4.5) return false;
         }
+        if (!matchesLengthBucket(b.lengthFt)) return false;
         return true;
-    });
+    }).map(b => ({
+        ...b,
+        _source: 'curated',
+        _traffic: b.dailyTraffic || b.dailyPassengers || 0,
+        _length: b.lengthFt || 0,
+        _year: b.opened || 0,
+        _health: b.healthRating || 0,
+        _name: b.name,
+    }));
 
-    list.innerHTML = bridges.map(b => {
-        const healthClass = b.healthRating >= 6.5 ? 'excellent' : b.healthRating >= 5.5 ? 'good' : b.healthRating >= 4.5 ? 'fair' : 'poor';
-        const healthColor = getHealthColor(b.healthRating);
-        const isActive = activeBridgeId === b.id;
+    // --- NBI bridges ---
+    const nbiRaw = window.NBI_BRIDGES || [];
+    const nbi = nbiRaw.filter(b => {
+        if (search && !b.name.toLowerCase().includes(search.toLowerCase())) return false;
+        if (filter !== 'all') {
+            const t = (b.type || '').toLowerCase();
+            if (!t.includes(filter)) return false;
+        }
+        if (currentCondition !== 'all') {
+            if (b.condition !== currentCondition) return false;
+        }
+        if (!matchesLengthBucket(b.length)) return false;
+        return true;
+    }).map(b => ({
+        ...b,
+        _source: 'nbi',
+        _traffic: b.adt || 0,
+        _length: b.length || 0,
+        _year: b.yearBuilt || 0,
+        _health: b.condition === 'Good' ? 7 : b.condition === 'Fair' ? 5 : b.condition === 'Poor' ? 2 : 0,
+        _name: b.name,
+    }));
 
-        const isComparing = compareBridges.includes(b.id);
-        const liveTag = b.liveDataAvailable ? '<span class="live-tag">LIVE</span>' : '';
+    // Combine and sort
+    let allBridges = [...curated, ...nbi];
 
-        return `
-            <div class="bridge-card ${isActive ? 'active' : ''} ${isComparing ? 'comparing' : ''}" data-id="${b.id}" style="--card-accent: ${healthColor}">
-                <div class="bc-top">
-                    <div class="bc-name">${b.name} ${liveTag}</div>
-                    <div class="bc-type">${b.type}</div>
+    switch (currentSort) {
+        case 'traffic-desc': allBridges.sort((a, b) => b._traffic - a._traffic); break;
+        case 'traffic-asc': allBridges.sort((a, b) => a._traffic - b._traffic); break;
+        case 'length-desc': allBridges.sort((a, b) => b._length - a._length); break;
+        case 'length-asc': allBridges.sort((a, b) => a._length - b._length); break;
+        case 'age-desc': allBridges.sort((a, b) => a._year - b._year); break;
+        case 'age-asc': allBridges.sort((a, b) => b._year - a._year); break;
+        case 'health-desc': allBridges.sort((a, b) => b._health - a._health); break;
+        case 'health-asc': allBridges.sort((a, b) => a._health - b._health); break;
+        case 'name-asc': allBridges.sort((a, b) => a._name.localeCompare(b._name)); break;
+        case 'name-desc': allBridges.sort((a, b) => b._name.localeCompare(a._name)); break;
+    }
+
+    // Render sort bar + count
+    const sortBar = `
+        <div class="sort-bar">
+            <span class="sort-count">${allBridges.length} bridges</span>
+            <select class="sort-select" id="sort-select">
+                <option value="traffic-desc" ${currentSort === 'traffic-desc' ? 'selected' : ''}>Traffic ↓</option>
+                <option value="traffic-asc" ${currentSort === 'traffic-asc' ? 'selected' : ''}>Traffic ↑</option>
+                <option value="length-desc" ${currentSort === 'length-desc' ? 'selected' : ''}>Length ↓</option>
+                <option value="length-asc" ${currentSort === 'length-asc' ? 'selected' : ''}>Length ↑</option>
+                <option value="age-desc" ${currentSort === 'age-desc' ? 'selected' : ''}>Oldest First</option>
+                <option value="age-asc" ${currentSort === 'age-asc' ? 'selected' : ''}>Newest First</option>
+                <option value="health-desc" ${currentSort === 'health-desc' ? 'selected' : ''}>Best Health</option>
+                <option value="health-asc" ${currentSort === 'health-asc' ? 'selected' : ''}>Worst Health</option>
+                <option value="name-asc" ${currentSort === 'name-asc' ? 'selected' : ''}>Name A–Z</option>
+                <option value="name-desc" ${currentSort === 'name-desc' ? 'selected' : ''}>Name Z–A</option>
+            </select>
+        </div>
+    `;
+
+    // Limit to 200 for performance
+    const displayBridges = allBridges.slice(0, 200);
+
+    list.innerHTML = sortBar + displayBridges.map(b => {
+        if (b._source === 'curated') {
+            const healthClass = b.healthRating >= 6.5 ? 'excellent' : b.healthRating >= 5.5 ? 'good' : b.healthRating >= 4.5 ? 'fair' : 'poor';
+            const healthColor = getHealthColor(b.healthRating);
+            const isActive = activeBridgeId === b.id;
+            const isComparing = compareBridges.includes(b.id);
+            const liveTag = b.liveDataAvailable ? '<span class="live-tag">LIVE</span>' : '';
+
+            return `
+                <div class="bridge-card ${isActive ? 'active' : ''} ${isComparing ? 'comparing' : ''}" data-id="${b.id}" data-source="curated" style="--card-accent: ${healthColor}">
+                    <div class="bc-top">
+                        <div class="bc-name">${b.name} ${liveTag}</div>
+                        <div class="bc-type">${b.type}</div>
+                    </div>
+                    <div class="bc-connects">${b.connects.join(' ↔ ')} &middot; ${b.crosses}</div>
+                    <div class="bc-stats">
+                        <div class="bc-stat">
+                            <span class="bc-stat-val">${b.opened}</span>
+                            <span class="bc-stat-label">Built</span>
+                        </div>
+                        <div class="bc-stat">
+                            <span class="bc-stat-val">${b.lengthMiles}mi</span>
+                            <span class="bc-stat-label">Length</span>
+                        </div>
+                        <div class="bc-stat">
+                            <span class="bc-stat-val">${formatCompact(b.dailyTraffic || b.dailyPassengers || 0)}</span>
+                            <span class="bc-stat-label">${b.isRailOnly ? 'Riders' : 'Vehicles'}/Day</span>
+                        </div>
+                        <div class="bc-health">
+                            <span class="health-dot ${healthClass}"></span>
+                            <span class="health-text" style="color:${healthColor}">${b.healthRating}</span>
+                        </div>
+                    </div>
+                    ${compareMode ? `<button class="compare-add-btn ${isComparing ? 'selected' : ''}" data-compare-id="${b.id}">${isComparing ? 'Selected' : 'Compare'}</button>` : ''}
                 </div>
-                <div class="bc-connects">${b.connects.join(' ↔ ')} &middot; ${b.crosses}</div>
-                <div class="bc-stats">
-                    <div class="bc-stat">
-                        <span class="bc-stat-val">${b.opened}</span>
-                        <span class="bc-stat-label">Built</span>
+            `;
+        } else {
+            // NBI bridge card
+            const condColor = b.condition === 'Good' ? '#4caf50' : b.condition === 'Fair' ? '#ff9800' : b.condition === 'Poor' ? '#f44336' : '#666';
+            const condClass = b.condition === 'Good' ? 'good' : b.condition === 'Fair' ? 'fair' : b.condition === 'Poor' ? 'poor' : 'fair';
+            const lengthMi = b.length ? (b.length / 5280).toFixed(2) : '--';
+            return `
+                <div class="bridge-card nbi-card" data-id="${b.id}" data-source="nbi" data-lat="${b.lat}" data-lng="${b.lng}" style="--card-accent: ${condColor}">
+                    <div class="bc-top">
+                        <div class="bc-name">${b.name} <span class="nbi-tag">NBI</span></div>
+                        <div class="bc-type">${b.designType || b.kind || ''}</div>
                     </div>
-                    <div class="bc-stat">
-                        <span class="bc-stat-val">${b.lengthMiles}mi</span>
-                        <span class="bc-stat-label">Length</span>
-                    </div>
-                    <div class="bc-stat">
-                        <span class="bc-stat-val">${formatCompact(b.dailyTraffic || b.dailyPassengers || 0)}</span>
-                        <span class="bc-stat-label">${b.isRailOnly ? 'Riders' : 'Vehicles'}/Day</span>
-                    </div>
-                    <div class="bc-health">
-                        <span class="health-dot ${healthClass}"></span>
-                        <span class="health-text" style="color:${healthColor}">${b.healthRating}</span>
+                    <div class="bc-connects">${b.owner || ''}</div>
+                    <div class="bc-stats">
+                        <div class="bc-stat">
+                            <span class="bc-stat-val">${b.yearBuilt || '--'}</span>
+                            <span class="bc-stat-label">Built</span>
+                        </div>
+                        <div class="bc-stat">
+                            <span class="bc-stat-val">${lengthMi}mi</span>
+                            <span class="bc-stat-label">Length</span>
+                        </div>
+                        <div class="bc-stat">
+                            <span class="bc-stat-val">${formatCompact(b.adt || 0)}</span>
+                            <span class="bc-stat-label">Vehicles/Day</span>
+                        </div>
+                        <div class="bc-health">
+                            <span class="health-dot ${condClass}"></span>
+                            <span class="health-text" style="color:${condColor}">${b.condition || '?'}</span>
+                        </div>
                     </div>
                 </div>
-                ${compareMode ? `<button class="compare-add-btn ${isComparing ? 'selected' : ''}" data-compare-id="${b.id}">${isComparing ? 'Selected' : 'Compare'}</button>` : ''}
-            </div>
-        `;
-    }).join('');
+            `;
+        }
+    }).join('') + (allBridges.length > 200 ? `<div class="sidebar-more">Showing 200 of ${allBridges.length} bridges. Zoom in or search to narrow results.</div>` : '');
 
-    // Attach click handlers
-    list.querySelectorAll('.bridge-card').forEach(card => {
+    // Attach sort handler
+    const sortSelect = document.getElementById('sort-select');
+    if (sortSelect) {
+        sortSelect.addEventListener('change', (e) => {
+            currentSort = e.target.value;
+            renderSidebar(currentFilter, document.getElementById('search-input')?.value || '');
+        });
+    }
+
+    // Attach click handlers for curated bridges
+    list.querySelectorAll('.bridge-card[data-source="curated"]').forEach(card => {
         card.addEventListener('click', (e) => {
             if (e.target.closest('.compare-add-btn')) return;
             selectBridge(card.dataset.id);
+        });
+    });
+
+    // Attach click handlers for NBI bridges — fly to location
+    list.querySelectorAll('.bridge-card[data-source="nbi"]').forEach(card => {
+        card.addEventListener('click', () => {
+            const lat = parseFloat(card.dataset.lat);
+            const lng = parseFloat(card.dataset.lng);
+            if (!isNaN(lat) && !isNaN(lng)) {
+                map.flyTo({ center: [lng, lat], zoom: 15, pitch: 50, duration: 1500 });
+            }
         });
     });
 
@@ -889,7 +1178,7 @@ function setupEventListeners() {
 
         // Reset view
         map.flyTo({
-            center: NYC_CENTER,
+            center: INITIAL_CENTER,
             zoom: INITIAL_ZOOM,
             pitch: INITIAL_PITCH,
             bearing: INITIAL_BEARING,
@@ -934,10 +1223,23 @@ function setupEventListeners() {
         });
     });
 
+    // Length bucket chips
+    document.querySelectorAll('[data-length]').forEach(chip => {
+        chip.addEventListener('click', () => {
+            document.querySelectorAll('[data-length]').forEach(c => c.classList.remove('active'));
+            chip.classList.add('active');
+            currentLengthBucket = chip.dataset.length;
+            renderSidebar(currentFilter, document.getElementById('search-input').value);
+        });
+    });
+
     // View mode buttons
     document.getElementById('btn-view-health').addEventListener('click', () => setViewMode('health'));
     document.getElementById('btn-view-traffic').addEventListener('click', () => setViewMode('traffic'));
     document.getElementById('btn-view-age').addEventListener('click', () => setViewMode('age'));
+
+    // Explore US toggle
+    document.getElementById('btn-explore-us').addEventListener('click', () => loadNbiBridges());
 
     // Compare mode
     const compareBtn = document.getElementById('btn-compare');
